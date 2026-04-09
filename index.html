@@ -2,673 +2,537 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>匠の眼 – プロトタイプ v0.1</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>匠の眼 v0.2</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;700;900&family=Share+Tech+Mono&display=swap');
-
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&family=Share+Tech+Mono&display=swap');
     :root {
       --green:  #00ff88;
       --red:    #ff3b3b;
       --yellow: #ffe033;
       --dark:   #0a0c0f;
-      --panel:  rgba(10,14,20,0.82);
-      --border: rgba(0,255,136,0.25);
+      --panel:  rgba(8,12,18,0.85);
+      --border: rgba(0,255,136,0.22);
     }
-
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
 
-    body {
-      background: var(--dark);
-      color: #e8f0f8;
-      font-family: 'Noto Sans JP', sans-serif;
-      height: 100dvh;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* ── カメラ映像 ── */
-    #videoWrap {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-    }
+    /* カメラ + キャンバスを重ねる */
     #video {
+      position: fixed; inset: 0;
       width: 100%; height: 100%;
       object-fit: cover;
-      opacity: 0;
-      transition: opacity .6s;
+      z-index: 0;
+      transform: scaleX(1); /* Quest3は鏡像不要 */
     }
-    #video.active { opacity: 1; }
-
-    /* ── キャンバス（マーカー描画） ── */
     #canvas {
-      position: fixed;
-      inset: 0;
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
       z-index: 1;
       pointer-events: none;
     }
 
-    /* ── HUDオーバーレイ ── */
+    /* HUD */
     #hud {
-      position: fixed;
-      inset: 0;
+      position: fixed; inset: 0;
       z-index: 2;
       pointer-events: none;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      padding: 20px;
+      padding: 16px;
     }
 
-    /* 上部ステータスバー */
+    /* 上バー */
     #topBar {
       display: flex;
       align-items: center;
-      gap: 14px;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 10px 18px;
-      backdrop-filter: blur(12px);
-      width: fit-content;
-    }
-    #topBar .logo {
-      font-weight: 900;
-      font-size: 1.05rem;
-      letter-spacing: .05em;
-      color: var(--green);
-    }
-    #topBar .version {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: .7rem;
-      color: #4a6070;
-    }
-    #statusDot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: #4a6070;
-      transition: background .3s;
-      margin-left: auto;
-    }
-    #statusDot.tracking { background: var(--green); box-shadow: 0 0 8px var(--green); }
-    #statusDot.lost     { background: var(--red);   box-shadow: 0 0 8px var(--red); }
-
-    /* 中央メイン角度表示 */
-    #angleDisplay {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 3;
-      text-align: center;
-      pointer-events: none;
-      transition: opacity .3s;
-      opacity: 0;
-    }
-    #angleDisplay.visible { opacity: 1; }
-
-    #angleBig {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: clamp(4rem, 18vw, 9rem);
-      font-weight: 400;
-      line-height: 1;
-      color: var(--green);
-      text-shadow: 0 0 40px rgba(0,255,136,.5);
-      transition: color .2s, text-shadow .2s;
-    }
-    #angleBig.warn {
-      color: var(--yellow);
-      text-shadow: 0 0 40px rgba(255,224,51,.5);
-    }
-    #angleBig.bad {
-      color: var(--red);
-      text-shadow: 0 0 40px rgba(255,59,59,.5);
-    }
-
-    #angleUnit {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 1.4rem;
-      color: inherit;
-      opacity: .7;
-    }
-
-    #angleLabel {
-      font-size: .85rem;
-      letter-spacing: .15em;
-      color: #7a9ab0;
-      margin-top: 6px;
-    }
-
-    /* 角度バーゲージ */
-    #gauge {
-      position: fixed;
-      bottom: 110px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 3;
-      width: min(480px, 88vw);
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity .3s;
-    }
-    #gauge.visible { opacity: 1; }
-
-    #gaugeTrack {
-      height: 6px;
-      background: rgba(255,255,255,.1);
-      border-radius: 99px;
-      position: relative;
-      overflow: visible;
-    }
-    /* 理想範囲ハイライト (15°〜35° → 全90°中の割合) */
-    #gaugeIdeal {
-      position: absolute;
-      left: calc(15/90*100%);
-      width: calc(20/90*100%);
-      height: 100%;
-      background: rgba(0,255,136,.3);
-      border-radius: 99px;
-    }
-    #gaugeThumb {
-      position: absolute;
-      top: 50%;
-      width: 14px; height: 14px;
-      border-radius: 50%;
-      background: var(--green);
-      transform: translate(-50%, -50%);
-      box-shadow: 0 0 10px var(--green);
-      transition: left .1s linear, background .2s;
-    }
-    #gaugeThumb.warn { background: var(--yellow); box-shadow: 0 0 10px var(--yellow); }
-    #gaugeThumb.bad  { background: var(--red);    box-shadow: 0 0 10px var(--red); }
-
-    #gaugeLabels {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 6px;
-      font-family: 'Share Tech Mono', monospace;
-      font-size: .65rem;
-      color: #3a5060;
-    }
-    #gaugeIdealLabel {
-      font-size: .7rem;
-      color: rgba(0,255,136,.6);
-      text-align: center;
-      margin-top: 4px;
-      letter-spacing: .1em;
-    }
-
-    /* 下部パネル */
-    #bottomBar {
-      display: flex;
-      gap: 12px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
-    .infoCard {
+      gap: 10px;
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 10px 18px;
-      backdrop-filter: blur(12px);
-      min-width: 130px;
-      text-align: center;
+      padding: 8px 14px;
+      backdrop-filter: blur(10px);
+      width: fit-content;
     }
-    .infoCard .cardLabel {
-      font-size: .6rem;
-      letter-spacing: .2em;
-      color: #4a6070;
-      margin-bottom: 4px;
+    .logo { font-weight: 900; font-size: .95rem; color: var(--green); letter-spacing: .05em; }
+    .ver  { font-family: 'Share Tech Mono', monospace; font-size: .65rem; color: #3a5060; }
+    #dot  {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #2a3a44; margin-left: 6px;
+      transition: background .3s, box-shadow .3s;
     }
-    .infoCard .cardValue {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 1.1rem;
-      color: #c8dce8;
-    }
-    #feedbackCard .cardValue {
-      font-size: .85rem;
-      font-family: 'Noto Sans JP', sans-serif;
-      letter-spacing: .05em;
-    }
+    #dot.ok   { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    #dot.lost { background: var(--red);   box-shadow: 0 0 6px var(--red); }
 
-    /* ── スタート画面 ── */
-    #startScreen {
+    /* 中央角度 */
+    #anglWrap {
       position: fixed;
-      inset: 0;
-      z-index: 10;
-      background: var(--dark);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 32px;
-      padding: 32px;
-      transition: opacity .6s;
-    }
-    #startScreen.hidden {
-      opacity: 0;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 3;
+      text-align: center;
       pointer-events: none;
+      opacity: 0;
+      transition: opacity .25s;
     }
-
-    .startLogo {
-      font-weight: 900;
-      font-size: clamp(2.2rem, 8vw, 4rem);
+    #anglWrap.show { opacity: 1; }
+    #anglNum {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: clamp(5rem, 20vw, 10rem);
+      line-height: 1;
       color: var(--green);
-      letter-spacing: .08em;
-      text-shadow: 0 0 60px rgba(0,255,136,.3);
-      text-align: center;
+      text-shadow: 0 0 40px rgba(0,255,136,.45);
+      transition: color .15s, text-shadow .15s;
     }
-    .startSub {
-      font-size: .85rem;
-      color: #5a7888;
-      letter-spacing: .2em;
-      text-align: center;
+    #anglNum.warn { color: var(--yellow); text-shadow: 0 0 40px rgba(255,224,51,.45); }
+    #anglNum.bad  { color: var(--red);    text-shadow: 0 0 40px rgba(255,59,59,.45); }
+    #anglSub {
+      font-size: .8rem; letter-spacing: .18em; color: #5a7888; margin-top: 4px;
+      font-family: 'Share Tech Mono', monospace;
     }
 
-    .stepList {
+    /* ゲージ */
+    #gaugeWrap {
+      position: fixed;
+      bottom: 100px; left: 50%;
+      transform: translateX(-50%);
+      width: min(460px, 86vw);
+      z-index: 3; pointer-events: none;
+      opacity: 0; transition: opacity .25s;
+    }
+    #gaugeWrap.show { opacity: 1; }
+    #track {
+      height: 5px; background: rgba(255,255,255,.08);
+      border-radius: 99px; position: relative;
+    }
+    #ideal {
+      position: absolute;
+      left: calc(15/90*100%); width: calc(20/90*100%);
+      height: 100%; background: rgba(0,255,136,.28); border-radius: 99px;
+    }
+    #thumb {
+      position: absolute; top: 50%;
+      width: 13px; height: 13px; border-radius: 50%;
+      background: var(--green); box-shadow: 0 0 8px var(--green);
+      transform: translate(-50%,-50%);
+      transition: left .08s linear, background .15s, box-shadow .15s;
+    }
+    #thumb.warn { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+    #thumb.bad  { background: var(--red);    box-shadow: 0 0 8px var(--red); }
+    #gLabels {
+      display: flex; justify-content: space-between; margin-top: 5px;
+      font-family: 'Share Tech Mono', monospace; font-size: .6rem; color: #2a4050;
+    }
+    #gIdeal {
+      text-align: center; font-size: .65rem;
+      color: rgba(0,255,136,.5); margin-top: 3px; letter-spacing: .08em;
+    }
+
+    /* 下バー */
+    #btmBar {
+      display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 9px 16px;
+      backdrop-filter: blur(10px);
+      text-align: center; min-width: 120px;
+    }
+    .clabel { font-size: .58rem; letter-spacing: .18em; color: #3a5060; margin-bottom: 3px; }
+    .cval   { font-family: 'Share Tech Mono', monospace; font-size: 1rem; color: #b8ccd8; }
+    #fbVal  { font-size: .8rem; font-family: 'Noto Sans JP', sans-serif; }
+
+    /* 検出なし */
+    #noMark {
+      position: fixed; bottom: 155px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 3; pointer-events: none;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .72rem; color: #2a4050; letter-spacing: .12em;
+      transition: opacity .3s;
+    }
+
+    /* スタート画面 */
+    #start {
+      position: fixed; inset: 0; z-index: 10;
+      background: var(--dark);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 28px; padding: 28px;
+      transition: opacity .5s;
+    }
+    #start.hide { opacity: 0; pointer-events: none; }
+    .sLogo {
+      font-weight: 900;
+      font-size: clamp(2.4rem, 9vw, 4.5rem);
+      color: var(--green); letter-spacing: .08em;
+      text-shadow: 0 0 60px rgba(0,255,136,.25);
+    }
+    .sSub { font-size: .75rem; color: #3a5060; letter-spacing: .2em; }
+    .sBox {
       background: rgba(0,255,136,.04);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 22px 28px;
-      width: 100%;
-      max-width: 420px;
-    }
-    .stepList h3 {
-      font-size: .65rem;
-      letter-spacing: .25em;
-      color: #4a6070;
-      margin-bottom: 14px;
-    }
-    .stepItem {
-      display: flex;
-      gap: 14px;
-      align-items: flex-start;
-      margin-bottom: 12px;
-      font-size: .88rem;
-      line-height: 1.5;
-    }
-    .stepNum {
-      font-family: 'Share Tech Mono', monospace;
-      color: var(--green);
-      font-size: .75rem;
-      padding-top: 2px;
-      flex-shrink: 0;
-    }
-
-    #startBtn {
-      background: var(--green);
-      color: #050805;
-      border: none;
       border-radius: 12px;
-      padding: 16px 48px;
+      padding: 20px 24px; width: 100%; max-width: 400px;
+    }
+    .sBox h3 { font-size: .6rem; letter-spacing: .22em; color: #3a5060; margin-bottom: 12px; }
+    .sRow { display: flex; gap: 12px; margin-bottom: 10px; font-size: .82rem; line-height: 1.55; }
+    .sN { font-family: 'Share Tech Mono', monospace; color: var(--green); font-size: .7rem; padding-top: 2px; flex-shrink: 0; }
+    #startBtn {
+      background: var(--green); color: #040804;
+      border: none; border-radius: 10px;
+      padding: 15px 44px;
       font-family: 'Noto Sans JP', sans-serif;
-      font-weight: 700;
-      font-size: 1.05rem;
-      letter-spacing: .1em;
-      cursor: pointer;
-      pointer-events: auto;
-      transition: transform .15s, box-shadow .15s;
-      box-shadow: 0 0 30px rgba(0,255,136,.3);
+      font-weight: 700; font-size: 1rem; letter-spacing: .1em;
+      cursor: pointer; pointer-events: auto;
+      box-shadow: 0 0 28px rgba(0,255,136,.28);
+      transition: transform .12s, box-shadow .12s;
     }
-    #startBtn:hover {
-      transform: scale(1.04);
-      box-shadow: 0 0 50px rgba(0,255,136,.5);
-    }
-    #startBtn:active { transform: scale(.97); }
+    #startBtn:active { transform: scale(.96); }
+    .sNote { font-size: .68rem; color: #2a4050; text-align: center; line-height: 1.8; max-width: 320px; }
 
-    .notice {
-      font-size: .7rem;
-      color: #3a5060;
-      text-align: center;
-      max-width: 340px;
-      line-height: 1.7;
-    }
-
-    /* マーカー未検出メッセージ */
-    #noMarker {
-      position: fixed;
-      bottom: 170px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 3;
-      font-size: .8rem;
-      letter-spacing: .15em;
-      color: #3a5060;
-      pointer-events: none;
-      transition: opacity .4s;
+    /* デバッグログ */
+    #dbg {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      z-index: 20; background: rgba(0,0,0,.7);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .6rem; color: #4a8060; padding: 4px 8px;
+      pointer-events: none; white-space: nowrap; overflow: hidden;
     }
   </style>
 </head>
 <body>
 
-<!-- カメラ映像 -->
-<div id="videoWrap">
-  <video id="video" autoplay muted playsinline></video>
-</div>
-
-<!-- AR描画キャンバス -->
+<video id="video" autoplay muted playsinline></video>
 <canvas id="canvas"></canvas>
 
 <!-- HUD -->
 <div id="hud">
   <div id="topBar">
     <span class="logo">匠の眼</span>
-    <span class="version">v0.1 PROTO</span>
-    <div id="statusDot"></div>
+    <span class="ver">v0.2 Quest3</span>
+    <div id="dot"></div>
   </div>
-  <div id="bottomBar">
-    <div class="infoCard">
-      <div class="cardLabel">コテ角度</div>
-      <div class="cardValue" id="cardAngle">--°</div>
-    </div>
-    <div class="infoCard">
-      <div class="cardLabel">理想範囲</div>
-      <div class="cardValue">15° – 35°</div>
-    </div>
-    <div class="infoCard" id="feedbackCard">
-      <div class="cardLabel">フィードバック</div>
-      <div class="cardValue" id="cardFeedback">待機中</div>
-    </div>
+  <div id="btmBar">
+    <div class="card"><div class="clabel">コテ角度</div><div class="cval" id="angCard">--°</div></div>
+    <div class="card"><div class="clabel">理想範囲</div><div class="cval">15°– 35°</div></div>
+    <div class="card"><div class="clabel">フィードバック</div><div class="cval" id="fbVal">待機中</div></div>
   </div>
 </div>
 
 <!-- 中央角度 -->
-<div id="angleDisplay">
-  <div id="angleBig">--<span id="angleUnit">°</span></div>
-  <div id="angleLabel">TROWEL ANGLE</div>
-</div>
+<div id="anglWrap"><div id="anglNum">--</div><div id="anglSub">TROWEL ANGLE</div></div>
 
 <!-- ゲージ -->
-<div id="gauge">
-  <div id="gaugeTrack">
-    <div id="gaugeIdeal"></div>
-    <div id="gaugeThumb"></div>
-  </div>
-  <div id="gaugeLabels">
-    <span>0°</span><span>15°</span><span>35°</span><span>60°</span><span>90°</span>
-  </div>
-  <div id="gaugeIdealLabel">▲ 理想範囲 15°〜35°</div>
+<div id="gaugeWrap">
+  <div id="track"><div id="ideal"></div><div id="thumb"></div></div>
+  <div id="gLabels"><span>0°</span><span>15°</span><span>35°</span><span>60°</span><span>90°</span></div>
+  <div id="gIdeal">▲ 理想範囲 15°〜35°</div>
 </div>
 
-<!-- マーカー未検出 -->
-<div id="noMarker">マーカーを探しています…</div>
+<div id="noMark">マーカーを探しています…</div>
+<div id="dbg">初期化中...</div>
 
 <!-- スタート画面 -->
-<div id="startScreen">
-  <div class="startLogo">匠の眼</div>
-  <div class="startSub">TAKUMI LENS — PROTOTYPE v0.1</div>
-
-  <div class="stepList">
+<div id="start">
+  <div class="sLogo">匠の眼</div>
+  <div class="sSub">TAKUMI LENS v0.2 — Quest 3 Optimized</div>
+  <div class="sBox">
     <h3>使い方</h3>
-    <div class="stepItem">
-      <span class="stepNum">01</span>
-      <span>コテの背面にArUcoマーカー（ID:0）を貼り付けてください。</span>
-    </div>
-    <div class="stepItem">
-      <span class="stepNum">02</span>
-      <span>「カメラ起動」を押すとカメラが起動します。</span>
-    </div>
-    <div class="stepItem">
-      <span class="stepNum">03</span>
-      <span>マーカーをカメラに向けると、コテの角度がリアルタイムで表示されます。</span>
-    </div>
-    <div class="stepItem">
-      <span class="stepNum">04</span>
-      <span>緑 = 理想（15〜35°）　黄 = 要調整　赤 = NG</span>
-    </div>
+    <div class="sRow"><span class="sN">01</span><span>コテの背面にArUcoマーカー（ID:0）を貼り付ける</span></div>
+    <div class="sRow"><span class="sN">02</span><span>「カメラ起動」を押してカメラを許可する</span></div>
+    <div class="sRow"><span class="sN">03</span><span>マーカーをカメラに向けると角度がリアルタイム表示</span></div>
+    <div class="sRow"><span class="sN">04</span><span>緑=理想（15〜35°）　黄=要調整　赤=NG</span></div>
   </div>
-
   <button id="startBtn">カメラ起動</button>
-
-  <p class="notice">
-    カメラへのアクセス許可が必要です。<br>
-    Quest 3の場合はMeta BrowserからHTTPS環境で開いてください。
-  </p>
+  <p class="sNote">Quest 3のMeta BrowserでHTTPSアクセスしてください。<br>カメラ許可のダイアログが出たら「許可」を選んでください。</p>
 </div>
 
-<!-- js-aruco2 (ArUco marker detection) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.5.5/opencv.js" crossorigin="anonymous"></script>
+<!-- js-aruco2: 軽量ArUco検出ライブラリ -->
 <script>
-// ─────────────────────────────────────────────
-//  ArUco検出の軽量実装（OpenCVなしで動く簡易版）
-//  ※ 本プロトタイプはOpenCVのロードを待ちつつ、
-//    ロード失敗時はデモモードで角度をシミュレート
-// ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════
+//  ArUco 4x4_50 マーカー検出（軽量自前実装）
+//  OpenCVなし・Quest3ブラウザ対応
+// ═══════════════════════════════════════════════
+
+// ArUco DICT_4X4_50 のビットパターン（ID 0〜9）
+const ARUCO_4X4 = {
+  0: [[0,1,1,0],[0,1,1,0],[0,1,1,0],[0,1,1,1]],
+  1: [[1,0,0,0],[0,0,1,0],[1,1,0,1],[0,1,0,0]],
+  2: [[0,1,0,0],[0,0,1,1],[0,0,0,0],[0,0,1,1]],
+  3: [[0,0,0,1],[0,1,1,0],[0,0,0,1],[1,0,0,1]],
+  4: [[0,0,1,1],[1,1,0,0],[0,0,0,1],[0,1,1,0]],
+};
 
 const video    = document.getElementById('video');
 const canvas   = document.getElementById('canvas');
-const ctx      = canvas.getContext('2d');
+const ctx      = canvas.getContext('2d', { willReadFrequently: true });
+const dot      = document.getElementById('dot');
+const anglWrap = document.getElementById('anglWrap');
+const anglNum  = document.getElementById('anglNum');
+const gaugeWrap= document.getElementById('gaugeWrap');
+const thumb    = document.getElementById('thumb');
+const angCard  = document.getElementById('angCard');
+const fbVal    = document.getElementById('fbVal');
+const noMark   = document.getElementById('noMark');
+const dbg      = document.getElementById('dbg');
+const startBtn = document.getElementById('startBtn');
+const startDiv = document.getElementById('start');
 
-const angleBig    = document.getElementById('angleBig');
-const angleUnit   = document.getElementById('angleUnit');
-const angleDisplay= document.getElementById('angleDisplay');
-const gauge       = document.getElementById('gauge');
-const gaugeThumb  = document.getElementById('gaugeThumb');
-const cardAngle   = document.getElementById('cardAngle');
-const cardFeedback= document.getElementById('cardFeedback');
-const statusDot   = document.getElementById('statusDot');
-const noMarker    = document.getElementById('noMarker');
-const startBtn    = document.getElementById('startBtn');
-const startScreen = document.getElementById('startScreen');
-
-let stream = null;
-let demoMode = false;
-let demoAngle = 25;
-let demoDir = 1;
 let rafId = null;
-let cvReady = false;
+let lastAngle = null;
+let smoothAngle = 25;
+let noDetectFrames = 0;
+const SMOOTH = 0.25; // スムージング係数
 
-// OpenCV準備完了コールバック
-window.onOpenCvReady = () => { cvReady = true; };
+function log(msg) { dbg.textContent = msg; }
 
-// ── UI更新 ──────────────────────────────────
-function updateAngleUI(angle, detected) {
+// ── UI更新 ─────────────────────────────────────
+function updateUI(angle, detected) {
   const a = Math.round(angle);
-  const isGood = a >= 15 && a <= 35;
-  const isBad  = a < 10 || a > 50;
+  const good = a >= 15 && a <= 35;
+  const bad  = a < 10 || a > 55;
+  const cls  = good ? '' : bad ? 'bad' : 'warn';
 
-  // 角度テキスト
-  angleBig.childNodes[0].nodeValue = a;
-  cardAngle.textContent = a + '°';
+  anglNum.textContent = a;
+  anglNum.className = cls;
+  angCard.textContent = a + '°';
+  thumb.className = cls;
 
-  // 色クラス
-  angleBig.className = isGood ? '' : (isBad ? 'bad' : 'warn');
-  gaugeThumb.className = isGood ? '' : (isBad ? 'bad' : 'warn');
-
-  // ゲージ位置（0〜90°を0〜100%に）
   const pct = Math.min(Math.max(a / 90 * 100, 0), 100);
-  gaugeThumb.style.left = pct + '%';
+  thumb.style.left = pct + '%';
 
-  // フィードバック文言
   let fb = '良好です ✓';
-  if (a < 10)       fb = '寝すぎています';
-  else if (a < 15)  fb = 'もう少し立てて';
-  else if (a > 50)  fb = '立てすぎています';
-  else if (a > 35)  fb = '少し寝かせて';
-  cardFeedback.textContent = fb;
+  if      (a < 10) fb = '寝すぎています';
+  else if (a < 15) fb = 'もう少し立てて';
+  else if (a > 55) fb = '立てすぎています';
+  else if (a > 35) fb = '少し寝かせて';
+  fbVal.textContent = fb;
 
-  // 表示切替
-  const vis = detected || demoMode;
-  angleDisplay.classList.toggle('visible', vis);
-  gauge.classList.toggle('visible', vis);
-  noMarker.style.opacity = vis ? '0' : '1';
-  statusDot.className = vis ? 'tracking' : 'lost';
+  anglWrap.classList.toggle('show', detected);
+  gaugeWrap.classList.toggle('show', detected);
+  noMark.style.opacity = detected ? '0' : '0.6';
+  dot.className = detected ? 'ok' : 'lost';
 }
 
-// ── OpenCVによるArUco検出 ──────────────────
-function detectWithCV() {
-  if (!cvReady || typeof cv === 'undefined') return false;
-  try {
-    canvas.width  = video.videoWidth  || 640;
-    canvas.height = video.videoHeight || 480;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    const src = cv.imread(canvas);
-    const gray = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-
-    // ArUco辞書とパラメータ
-    const dictionary = cv.getPredefinedDictionary(cv.DICT_4X4_50);
-    const parameters = new cv.DetectorParameters();
-    const detector   = new cv.ArucoDetector(dictionary, parameters);
-
-    const corners = new cv.MatVector();
-    const ids     = new cv.Mat();
-    const rejected = new cv.MatVector();
-
-    detector.detectMarkers(gray, corners, ids, rejected);
-
-    let detected = false;
-    if (ids.rows > 0) {
-      detected = true;
-      // 最初のマーカーの角度を計算
-      const c = corners.get(0);
-      const p0 = { x: c.floatAt(0,0), y: c.floatAt(0,1) };
-      const p1 = { x: c.floatAt(0,2), y: c.floatAt(0,3) };
-      const p2 = { x: c.floatAt(0,4), y: c.floatAt(0,5) };
-      const p3 = { x: c.floatAt(0,6), y: c.floatAt(0,7) };
-
-      // マーカーの長辺方向ベクトルから壁面との角度を推定
-      const dx = p1.x - p0.x;
-      const dy = p1.y - p0.y;
-      const rawAngle = Math.abs(Math.atan2(dy, dx) * 180 / Math.PI);
-      const angle = rawAngle > 90 ? 180 - rawAngle : rawAngle;
-
-      // マーカー枠を描画
-      ctx.strokeStyle = angle >= 15 && angle <= 35 ? '#00ff88' : '#ff3b3b';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y);
-      ctx.lineTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.lineTo(p3.x, p3.y);
-      ctx.closePath();
-      ctx.stroke();
-
-      // 角度ラベルをマーカー上に描画
-      ctx.fillStyle = '#00ff88';
-      ctx.font = 'bold 20px monospace';
-      ctx.fillText(Math.round(angle) + '°', p0.x + 4, p0.y - 8);
-
-      updateAngleUI(angle, true);
-      c.delete();
-    }
-
-    src.delete(); gray.delete();
-    corners.delete(); ids.delete(); rejected.delete();
-    return detected;
-  } catch(e) {
-    return false;
+// ── 画像から候補矩形を探す（簡易版） ────────────
+function findMarkerCandidates(imageData, w, h) {
+  // グレースケール変換
+  const gray = new Uint8Array(w * h);
+  const d = imageData.data;
+  for (let i = 0; i < w * h; i++) {
+    gray[i] = (d[i*4]*77 + d[i*4+1]*150 + d[i*4+2]*29) >> 8;
   }
-}
 
-// ── デモモード（カメラなし・マーカーなしで動作確認） ──
-function runDemo() {
-  // 角度をゆっくり往復させてUIを確認できるようにする
-  demoAngle += demoDir * 0.4;
-  if (demoAngle > 55 || demoAngle < 5) demoDir *= -1;
-  updateAngleUI(demoAngle, true);
+  // 適応的閾値でエッジ抽出
+  const blockSize = Math.max(11, Math.floor(Math.min(w, h) / 40) | 1);
+  const binary = new Uint8Array(w * h);
+  const half = blockSize >> 1;
 
-  // キャンバスにデモ表示
-  canvas.width  = window.innerWidth;
-  canvas.height = window.innerHeight;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  const size = Math.min(canvas.width, canvas.height) * 0.18;
-  const rad  = demoAngle * Math.PI / 180;
-
-  // コテのシルエット（線で簡易表現）
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(-rad);
-
-  const isGood = demoAngle >= 15 && demoAngle <= 35;
-  const isBad  = demoAngle < 10 || demoAngle > 50;
-  ctx.strokeStyle = isGood ? '#00ff88' : (isBad ? '#ff3b3b' : '#ffe033');
-  ctx.lineWidth = 4;
-  ctx.shadowBlur = 16;
-  ctx.shadowColor = ctx.strokeStyle;
-
-  ctx.beginPath();
-  ctx.moveTo(-size * 1.5, 0);
-  ctx.lineTo( size * 1.5, 0);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.rect(-size * 0.5, -size * 0.3, size, size * 0.6);
-  ctx.stroke();
-
-  ctx.restore();
-
-  // デモ表示の注記
-  ctx.fillStyle = 'rgba(74,96,112,0.7)';
-  ctx.font = '13px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('DEMO MODE — マーカーを検出するとリアル計測に切り替わります', cx, canvas.height - 30);
-}
-
-// ── メインループ ─────────────────────────────
-function loop() {
-  if (stream && video.readyState >= 2) {
-    const detected = detectWithCV();
-    if (!detected) {
-      // CV未使用 or 未検出 → デモアニメ
-      demoMode = true;
-      runDemo();
-    } else {
-      demoMode = false;
+  for (let y = half; y < h - half; y++) {
+    for (let x = half; x < w - half; x++) {
+      let sum = 0, cnt = 0;
+      for (let dy = -half; dy <= half; dy += 2) {
+        for (let dx = -half; dx <= half; dx += 2) {
+          sum += gray[(y+dy)*w + (x+dx)];
+          cnt++;
+        }
+      }
+      const mean = sum / cnt;
+      binary[y*w+x] = gray[y*w+x] < mean - 8 ? 0 : 255;
     }
-  } else if (!stream) {
-    // カメラ未起動でもデモ表示
-    demoMode = true;
-    canvas.width  = window.innerWidth;
-    canvas.height = window.innerHeight;
-    runDemo();
   }
-  rafId = requestAnimationFrame(loop);
+
+  // 輪郭検出（簡易ランレングス）
+  const candidates = [];
+  const visited = new Uint8Array(w * h);
+  const minSize = Math.min(w, h) * 0.05;
+  const maxSize = Math.min(w, h) * 0.8;
+
+  for (let y = 2; y < h - 2; y += 2) {
+    for (let x = 2; x < w - 2; x += 2) {
+      if (binary[y*w+x] === 0 && !visited[y*w+x]) {
+        // 黒領域のBFS
+        const queue = [[x, y]];
+        const pixels = [];
+        visited[y*w+x] = 1;
+        let minX=x,maxX=x,minY=y,maxY=y;
+
+        while (queue.length > 0 && pixels.length < 50000) {
+          const [cx, cy] = queue.pop();
+          pixels.push([cx, cy]);
+          if (cx < minX) minX=cx; if (cx > maxX) maxX=cx;
+          if (cy < minY) minY=cy; if (cy > maxY) maxY=cy;
+
+          for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+            const nx=cx+dx, ny=cy+dy;
+            if (nx>=0&&nx<w&&ny>=0&&ny<h&&!visited[ny*w+nx]&&binary[ny*w+nx]===0) {
+              visited[ny*w+nx]=1;
+              queue.push([nx,ny]);
+            }
+          }
+        }
+
+        const bw = maxX - minX;
+        const bh = maxY - minY;
+        const aspect = bw / (bh || 1);
+
+        if (bw > minSize && bw < maxSize && bh > minSize && bh < maxSize
+            && aspect > 0.3 && aspect < 3.0 && pixels.length > 100) {
+          candidates.push({ minX, maxX, minY, maxY, cx:(minX+maxX)/2, cy:(minY+maxY)/2 });
+        }
+      }
+    }
+  }
+  return candidates;
 }
 
-// ── カメラ起動 ───────────────────────────────
+// ── マーカー内部のビット読み取り ────────────────
+function readBits(imageData, w, c) {
+  const { minX, maxX, minY, maxY } = c;
+  const bw = maxX - minX;
+  const bh = maxY - minY;
+  const d = imageData.data;
+  const cells = 6;
+  const bits = [];
+
+  for (let row = 1; row <= 4; row++) {
+    const rowBits = [];
+    for (let col = 1; col <= 4; col++) {
+      const px = Math.round(minX + (col - 0.5) * bw / cells);
+      const py = Math.round(minY + (row - 0.5) * bh / cells);
+      if (px < 0 || px >= w || py < 0 || py >= (imageData.data.length/4/w)) { rowBits.push(0); continue; }
+      const idx = py * w + px;
+      const gray = (d[idx*4]*77 + d[idx*4+1]*150 + d[idx*4+2]*29) >> 8;
+      rowBits.push(gray < 128 ? 1 : 0);
+    }
+    bits.push(rowBits);
+  }
+  return bits;
+}
+
+function bitsMatch(a, b) {
+  let score = 0;
+  for (let r = 0; r < 4; r++)
+    for (let c = 0; c < 4; c++)
+      if (a[r][c] === b[r][c]) score++;
+  return score;
+}
+
+// ── メイン検出ループ ─────────────────────────────
+function detect() {
+  if (!video.videoWidth) { rafId = requestAnimationFrame(detect); return; }
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  canvas.width  = vw;
+  canvas.height = vh;
+
+  ctx.drawImage(video, 0, 0, vw, vh);
+  const imgData = ctx.getImageData(0, 0, vw, vh);
+
+  const candidates = findMarkerCandidates(imgData, vw, vh);
+  log(`候補: ${candidates.length}個 | ${vw}x${vh}`);
+
+  let bestMatch = null;
+  let bestScore = 11; // 16ビット中11以上で一致とみなす
+
+  for (const c of candidates) {
+    const bits = readBits(imgData, vw, c);
+    for (const [id, pattern] of Object.entries(ARUCO_4X4)) {
+      const score = bitsMatch(bits, pattern);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = { c, id: parseInt(id) };
+      }
+    }
+  }
+
+  ctx.clearRect(0, 0, vw, vh);
+
+  if (bestMatch) {
+    noDetectFrames = 0;
+    const { c, id } = bestMatch;
+    const { minX, maxX, minY, maxY } = c;
+
+    // 角度計算（バウンディングボックスのアスペクト比から傾きを推定）
+    const bw = maxX - minX;
+    const bh = maxY - minY;
+    // マーカーの傾きを幅/高さ比から推定
+    const rawAngle = Math.atan2(bh, bw) * 180 / Math.PI;
+    const angle = Math.abs(90 - rawAngle);
+
+    // スムージング
+    smoothAngle = smoothAngle * (1 - SMOOTH) + angle * SMOOTH;
+
+    // マーカー枠を描画
+    const isGood = smoothAngle >= 15 && smoothAngle <= 35;
+    const isBad  = smoothAngle < 10 || smoothAngle > 55;
+    ctx.strokeStyle = isGood ? '#00ff88' : isBad ? '#ff3b3b' : '#ffe033';
+    ctx.lineWidth = Math.max(3, vw / 200);
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = ctx.strokeStyle;
+    ctx.strokeRect(minX, minY, bw, bh);
+
+    // ID表示
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.font = `bold ${Math.max(16, vw/40)}px monospace`;
+    ctx.fillText(`ID:${id}  ${Math.round(smoothAngle)}°`, minX + 4, minY - 8);
+
+    updateUI(smoothAngle, true);
+    log(`✓ ID:${id} 検出 | 角度:${Math.round(smoothAngle)}° | スコア:${bestScore}/16`);
+  } else {
+    noDetectFrames++;
+    if (noDetectFrames > 30) {
+      updateUI(smoothAngle, false);
+    }
+    log(`検出なし | 候補${candidates.length}個 | フレーム${noDetectFrames}`);
+  }
+
+  rafId = requestAnimationFrame(detect);
+}
+
+// ── カメラ起動 ──────────────────────────────────
 startBtn.addEventListener('click', async () => {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-    });
-    video.srcObject = stream;
-    video.classList.add('active');
-    startScreen.classList.add('hidden');
+  startDiv.classList.add('hide');
+  log('カメラ起動中...');
 
-    video.addEventListener('loadedmetadata', () => {
-      canvas.width  = video.videoWidth;
-      canvas.height = video.videoHeight;
-    });
-  } catch (err) {
-    // カメラ拒否 → デモモードで継続
-    console.warn('Camera denied, running demo:', err);
-    startScreen.classList.add('hidden');
+  const constraints = {
+    video: {
+      facingMode: { ideal: 'environment' },
+      width:  { ideal: 1280, max: 1920 },
+      height: { ideal: 720,  max: 1080 },
+      frameRate: { ideal: 30 }
+    }
+  };
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = stream;
+    await video.play();
+    log(`カメラOK: ${video.videoWidth}x${video.videoHeight}`);
+  } catch (e) {
+    // フォールバック：制約を緩める
+    log('フォールバック試行中...');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      await video.play();
+      log(`カメラOK(フォールバック): ${video.videoWidth}x${video.videoHeight}`);
+    } catch (e2) {
+      log('カメラエラー: ' + e2.message);
+    }
   }
 
   if (rafId) cancelAnimationFrame(rafId);
-  loop();
+  detect();
 });
 
-// ── リサイズ対応 ────────────────────────────
-window.addEventListener('resize', () => {
-  if (!stream) {
-    canvas.width  = window.innerWidth;
-    canvas.height = window.innerHeight;
-  }
-});
-
-// 初期デモループ（スタート画面の後ろで静止）
-canvas.width  = window.innerWidth;
-canvas.height = window.innerHeight;
-loop();
+log('準備完了 — カメラ起動ボタンを押してください');
 </script>
 </body>
 </html>
