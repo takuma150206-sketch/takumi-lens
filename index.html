@@ -3,36 +3,40 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>匠の眼 v0.3</title>
+  <title>匠の眼 v0.4</title>
+
+  <!-- A-Frame + AR.js（実績ある組み合わせ） -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/aframe/1.4.2/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&family=Share+Tech+Mono&display=swap');
     :root {
       --green:  #00ff88;
       --red:    #ff3b3b;
       --yellow: #ffe033;
-      --dark:   #0a0c0f;
       --panel:  rgba(8,12,18,0.88);
       --border: rgba(0,255,136,0.22);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
 
-    #video {
-      position: fixed; inset: 0;
-      width: 100%; height: 100%;
-      object-fit: cover; z-index: 0;
+    /* AR.jsが生成するcanvasとvideoを全画面に */
+    canvas, video {
+      position: fixed !important;
+      top: 0 !important; left: 0 !important;
+      width: 100% !important; height: 100% !important;
+      object-fit: cover !important;
     }
-    #canvas {
-      position: fixed; inset: 0;
-      width: 100%; height: 100%;
-      z-index: 1; pointer-events: none;
-    }
+
+    /* HUD（AR.jsの上に重ねる） */
     #hud {
-      position: fixed; inset: 0; z-index: 2;
+      position: fixed; inset: 0; z-index: 999;
       pointer-events: none;
       display: flex; flex-direction: column;
       justify-content: space-between; padding: 16px;
     }
+
     #topBar {
       display: flex; align-items: center; gap: 10px;
       background: var(--panel); border: 1px solid var(--border);
@@ -41,14 +45,14 @@
     }
     .logo { font-weight: 900; font-size: .95rem; color: var(--green); letter-spacing: .05em; }
     .ver  { font-family: 'Share Tech Mono', monospace; font-size: .65rem; color: #3a5060; }
-    #dot  { width: 7px; height: 7px; border-radius: 50%; background: #2a3a44; margin-left: 6px; transition: background .3s, box-shadow .3s; }
+    #dot  { width: 8px; height: 8px; border-radius: 50%; background: #2a3a44; margin-left: 6px; transition: background .3s, box-shadow .3s; }
     #dot.ok   { background: var(--green); box-shadow: 0 0 8px var(--green); }
     #dot.lost { background: var(--red);   box-shadow: 0 0 6px var(--red); }
 
     #anglWrap {
-      position: fixed; top: 50%; left: 50%;
+      position: fixed; top: 42%; left: 50%;
       transform: translate(-50%, -50%);
-      z-index: 3; text-align: center;
+      z-index: 999; text-align: center;
       pointer-events: none; opacity: 0; transition: opacity .25s;
     }
     #anglWrap.show { opacity: 1; }
@@ -56,27 +60,27 @@
       font-family: 'Share Tech Mono', monospace;
       font-size: clamp(5rem, 20vw, 10rem);
       line-height: 1; color: var(--green);
-      text-shadow: 0 0 40px rgba(0,255,136,.45);
+      text-shadow: 0 0 40px rgba(0,255,136,.5);
       transition: color .15s, text-shadow .15s;
     }
-    #anglNum.warn { color: var(--yellow); text-shadow: 0 0 40px rgba(255,224,51,.45); }
-    #anglNum.bad  { color: var(--red);    text-shadow: 0 0 40px rgba(255,59,59,.45); }
-    #anglSub { font-size: .8rem; letter-spacing: .18em; color: #5a7888; margin-top: 4px; font-family: 'Share Tech Mono', monospace; }
+    #anglNum.warn { color: var(--yellow); text-shadow: 0 0 40px rgba(255,224,51,.5); }
+    #anglNum.bad  { color: var(--red);    text-shadow: 0 0 40px rgba(255,59,59,.5); }
+    #anglSub { font-size: .8rem; letter-spacing: .18em; color: #5a7888; margin-top: 6px; font-family: 'Share Tech Mono', monospace; }
 
     #gaugeWrap {
-      position: fixed; bottom: 100px; left: 50%;
+      position: fixed; bottom: 105px; left: 50%;
       transform: translateX(-50%);
-      width: min(460px, 86vw); z-index: 3;
+      width: min(460px, 86vw); z-index: 999;
       pointer-events: none; opacity: 0; transition: opacity .25s;
     }
     #gaugeWrap.show { opacity: 1; }
-    #track { height: 5px; background: rgba(255,255,255,.08); border-radius: 99px; position: relative; }
-    #ideal { position: absolute; left: calc(15/90*100%); width: calc(20/90*100%); height: 100%; background: rgba(0,255,136,.28); border-radius: 99px; }
-    #thumb { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); transform: translate(-50%,-50%); transition: left .08s linear, background .15s; }
+    #track { height: 5px; background: rgba(255,255,255,.1); border-radius: 99px; position: relative; }
+    #ideal { position: absolute; left: calc(15/90*100%); width: calc(20/90*100%); height: 100%; background: rgba(0,255,136,.3); border-radius: 99px; }
+    #thumb { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); transform: translate(-50%,-50%); transition: left .1s linear, background .15s; }
     #thumb.warn { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
     #thumb.bad  { background: var(--red);    box-shadow: 0 0 8px var(--red); }
     #gLabels { display: flex; justify-content: space-between; margin-top: 5px; font-family: 'Share Tech Mono', monospace; font-size: .6rem; color: #2a4050; }
-    #gIdeal { text-align: center; font-size: .65rem; color: rgba(0,255,136,.5); margin-top: 3px; }
+    #gIdeal  { text-align: center; font-size: .65rem; color: rgba(0,255,136,.55); margin-top: 3px; }
 
     #btmBar { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
     .card { background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 9px 16px; backdrop-filter: blur(10px); text-align: center; min-width: 120px; }
@@ -84,32 +88,90 @@
     .cval   { font-family: 'Share Tech Mono', monospace; font-size: 1rem; color: #b8ccd8; }
     #fbVal  { font-size: .8rem; font-family: 'Noto Sans JP', sans-serif; }
 
-    #noMark { position: fixed; bottom: 155px; left: 50%; transform: translateX(-50%); z-index: 3; pointer-events: none; font-family: 'Share Tech Mono', monospace; font-size: .72rem; color: #2a4050; letter-spacing: .12em; transition: opacity .3s; }
+    #noMark {
+      position: fixed; bottom: 160px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 999; pointer-events: none;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .72rem; color: #3a5060; letter-spacing: .12em;
+    }
 
-    #dbg { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; background: rgba(0,0,0,.75); font-family: 'Share Tech Mono', monospace; font-size: .58rem; color: #3a7050; padding: 4px 8px; pointer-events: none; white-space: nowrap; overflow: hidden; }
+    #dbg {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+      background: rgba(0,0,0,.8); font-family: 'Share Tech Mono', monospace;
+      font-size: .58rem; color: #3a8060; padding: 4px 8px;
+      pointer-events: none; white-space: nowrap; overflow: hidden;
+    }
 
-    #start { position: fixed; inset: 0; z-index: 10; background: var(--dark); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 28px; transition: opacity .5s; }
+    /* スタート画面 */
+    #start {
+      position: fixed; inset: 0; z-index: 10000;
+      background: #0a0c0f;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 26px; padding: 28px;
+      transition: opacity .5s;
+    }
     #start.hide { opacity: 0; pointer-events: none; }
-    .sLogo { font-weight: 900; font-size: clamp(2.4rem, 9vw, 4.5rem); color: var(--green); letter-spacing: .08em; text-shadow: 0 0 60px rgba(0,255,136,.25); }
-    .sSub  { font-size: .75rem; color: #3a5060; letter-spacing: .2em; }
-    .sBox  { background: rgba(0,255,136,.04); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; width: 100%; max-width: 400px; }
+    .sLogo { font-weight: 900; font-size: clamp(2.4rem, 9vw, 4.5rem); color: var(--green); letter-spacing: .08em; text-shadow: 0 0 60px rgba(0,255,136,.25); font-family: 'Noto Sans JP', sans-serif; }
+    .sSub  { font-size: .75rem; color: #3a5060; letter-spacing: .2em; font-family: 'Share Tech Mono', monospace; }
+    .sBox  { background: rgba(0,255,136,.04); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; width: 100%; max-width: 400px; color: #d0dde8; font-family: 'Noto Sans JP', sans-serif; }
     .sBox h3 { font-size: .6rem; letter-spacing: .22em; color: #3a5060; margin-bottom: 12px; }
     .sRow { display: flex; gap: 12px; margin-bottom: 10px; font-size: .82rem; line-height: 1.55; }
     .sN   { font-family: 'Share Tech Mono', monospace; color: var(--green); font-size: .7rem; padding-top: 2px; flex-shrink: 0; }
-    #startBtn { background: var(--green); color: #040804; border: none; border-radius: 10px; padding: 15px 44px; font-family: 'Noto Sans JP', sans-serif; font-weight: 700; font-size: 1rem; letter-spacing: .1em; cursor: pointer; pointer-events: auto; box-shadow: 0 0 28px rgba(0,255,136,.28); transition: transform .12s; }
+    #startBtn {
+      background: var(--green); color: #040804;
+      border: none; border-radius: 10px;
+      padding: 15px 44px;
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 700; font-size: 1rem; letter-spacing: .1em;
+      cursor: pointer; pointer-events: auto;
+      box-shadow: 0 0 28px rgba(0,255,136,.3);
+      transition: transform .12s;
+    }
     #startBtn:active { transform: scale(.96); }
-    .sNote { font-size: .68rem; color: #2a4050; text-align: center; line-height: 1.8; max-width: 320px; }
+    .sNote { font-size: .68rem; color: #2a4050; text-align: center; line-height: 1.8; max-width: 320px; font-family: 'Noto Sans JP', sans-serif; }
   </style>
 </head>
 <body>
 
-<video id="video" autoplay muted playsinline></video>
-<canvas id="canvas"></canvas>
+<!-- AR.js シーン（マーカー認識はここで行う） -->
+<a-scene
+  embedded
+  arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 4x4_BCH_13_9_3;"
+  vr-mode-ui="enabled: false"
+  renderer="logarithmicDepthBuffer: true; precision: medium;"
+  id="arScene"
+  style="display:none;"
+>
+  <!-- ID:0のマーカー -->
+  <a-marker
+    id="marker0"
+    type="barcode"
+    value="0"
+    smooth="true"
+    smoothCount="5"
+    smoothTolerance="0.01"
+    smoothThreshold="2"
+  >
+    <!-- マーカー上に表示する3Dオブジェクト（認識確認用の緑の枠） -->
+    <a-box
+      position="0 0.05 0"
+      scale="1 0.1 1"
+      color="#00ff88"
+      opacity="0.6"
+      material="wireframe: true; wireframeLinewidth: 3;"
+    ></a-box>
+  </a-marker>
 
+  <a-entity camera></a-entity>
+</a-scene>
+
+<!-- HUD -->
 <div id="hud">
   <div id="topBar">
     <span class="logo">匠の眼</span>
-    <span class="ver">v0.3</span>
+    <span class="ver">v0.4 AR.js</span>
     <div id="dot"></div>
   </div>
   <div id="btmBar">
@@ -125,63 +187,25 @@
   <div id="gLabels"><span>0°</span><span>15°</span><span>35°</span><span>60°</span><span>90°</span></div>
   <div id="gIdeal">▲ 理想範囲 15°〜35°</div>
 </div>
-<div id="noMark">マーカーを探しています…</div>
+<div id="noMark">マーカーをカメラに向けてください</div>
 <div id="dbg">初期化中...</div>
 
+<!-- スタート画面 -->
 <div id="start">
   <div class="sLogo">匠の眼</div>
-  <div class="sSub">TAKUMI LENS v0.3</div>
+  <div class="sSub">TAKUMI LENS v0.4 — AR.js</div>
   <div class="sBox">
     <h3>使い方</h3>
-    <div class="sRow"><span class="sN">01</span><span>このページの下にある印刷用マーカーを印刷してコテに貼る</span></div>
-    <div class="sRow"><span class="sN">02</span><span>「カメラ起動」を押してカメラを許可する</span></div>
-    <div class="sRow"><span class="sN">03</span><span>マーカーをカメラに向けると角度がリアルタイム表示</span></div>
+    <div class="sRow"><span class="sN">01</span><span>v0.4用マーカー（4x4_BCH）を印刷してコテに貼る</span></div>
+    <div class="sRow"><span class="sN">02</span><span>「起動」を押すとカメラが自動で開く</span></div>
+    <div class="sRow"><span class="sN">03</span><span>マーカーをカメラに向けると角度が表示される</span></div>
     <div class="sRow"><span class="sN">04</span><span>緑=理想（15〜35°）　黄=要調整　赤=NG</span></div>
   </div>
-  <button id="startBtn">カメラ起動</button>
-  <p class="sNote">Quest 3のMeta BrowserでHTTPSアクセスしてください。<br>カメラ許可のダイアログが出たら「許可」を選んでください。</p>
+  <button id="startBtn">起動</button>
+  <p class="sNote">カメラ許可のダイアログが出たら「許可」を選んでください。</p>
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════
-//  AR.js / js-aruco と同じ DICT_4X4_50 正確なビット列
-//  出典: OpenCV ArUco実装の公式ビットパターン
-// ═══════════════════════════════════════════════════════
-
-// DICT_4X4_50 の正確なビットパターン（各IDを32bit整数で表現）
-// bit順: 左上から右下へ、MSBが最初
-const DICT_4X4_50_BITS = [
-  0b1101001001110001, // ID 0
-  0b1101110000100111, // ID 1
-  0b1101110001110001, // ID 2
-  0b1001110001100111, // ID 3
-  0b0101001011000111, // ID 4
-  0b1001001011100001, // ID 5
-  0b1001110011000001, // ID 6
-  0b0001001001100111, // ID 7
-  0b0101110001000111, // ID 8
-  0b1101001011100111, // ID 9
-];
-
-// ビット列を4x4配列に変換
-function bitsTo4x4(bits) {
-  const arr = [];
-  for (let r = 0; r < 4; r++) {
-    const row = [];
-    for (let c = 0; c < 4; c++) {
-      row.push((bits >> (15 - (r*4+c))) & 1);
-    }
-    arr.push(row);
-  }
-  return arr;
-}
-
-const PATTERNS = DICT_4X4_50_BITS.map(bitsTo4x4);
-
-// ── DOM ─────────────────────────────────────────
-const video    = document.getElementById('video');
-const canvas   = document.getElementById('canvas');
-const ctx      = canvas.getContext('2d', { willReadFrequently: true });
 const dot      = document.getElementById('dot');
 const anglWrap = document.getElementById('anglWrap');
 const anglNum  = document.getElementById('anglNum');
@@ -191,15 +215,16 @@ const angCard  = document.getElementById('angCard');
 const fbVal    = document.getElementById('fbVal');
 const noMark   = document.getElementById('noMark');
 const dbgEl    = document.getElementById('dbg');
+const arScene  = document.getElementById('arScene');
+const marker0  = document.getElementById('marker0');
 
 let smoothAngle = 25;
-let noDetectFrames = 0;
-let rafId = null;
+let detected = false;
+let lastSeen = 0;
 
 function log(msg) { dbgEl.textContent = msg; }
 
-// ── UI更新 ──────────────────────────────────────
-function updateUI(angle, detected) {
+function updateUI(angle, isDetected) {
   const a = Math.round(angle);
   const good = a >= 15 && a <= 35;
   const bad  = a < 10 || a > 55;
@@ -209,7 +234,7 @@ function updateUI(angle, detected) {
   anglNum.className = cls;
   angCard.textContent = a + '°';
   thumb.className = cls;
-  thumb.style.left = Math.min(Math.max(a/90*100, 0), 100) + '%';
+  thumb.style.left = Math.min(Math.max(a/90*100,0),100) + '%';
 
   let fb = '良好です ✓';
   if      (a < 10) fb = '寝すぎています';
@@ -218,244 +243,82 @@ function updateUI(angle, detected) {
   else if (a > 35) fb = '少し寝かせて';
   fbVal.textContent = fb;
 
-  anglWrap.classList.toggle('show', detected);
-  gaugeWrap.classList.toggle('show', detected);
-  noMark.style.opacity = detected ? '0' : '0.7';
-  dot.className = detected ? 'ok' : 'lost';
+  anglWrap.classList.toggle('show', isDetected);
+  gaugeWrap.classList.toggle('show', isDetected);
+  noMark.style.opacity = isDetected ? '0' : '1';
+  dot.className = isDetected ? 'ok' : 'lost';
 }
 
-// ── グレースケール変換 ──────────────────────────
-function toGray(data, w, h) {
-  const gray = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    gray[i] = (data[i*4]*77 + data[i*4+1]*150 + data[i*4+2]*29) >> 8;
-  }
-  return gray;
+// マーカーのrotationから「コテの壁面角度」を計算
+function calcTrowelAngle(rotation) {
+  // AR.jsはrotation.xが壁面に対する傾きを表す（ラジアン）
+  // コテが水平=0°、垂直=90°
+  const rx = THREE.MathUtils.radToDeg(rotation.x);
+  const ry = THREE.MathUtils.radToDeg(rotation.y);
+  const rz = THREE.MathUtils.radToDeg(rotation.z);
+
+  // 主に使うのはX軸の回転（前後の傾き）
+  // 0°=マーカーが正面向き（コテ水平）、90°=コテ垂直
+  const angle = Math.abs(rx) % 180;
+  const normalized = angle > 90 ? 180 - angle : angle;
+  return normalized;
 }
 
-// ── 大津の二値化 ────────────────────────────────
-function otsuThreshold(gray) {
-  const hist = new Int32Array(256);
-  for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
-  const total = gray.length;
-  let sum = 0;
-  for (let i = 0; i < 256; i++) sum += i * hist[i];
-  let sumB = 0, wB = 0, max = 0, thresh = 128;
-  for (let i = 0; i < 256; i++) {
-    wB += hist[i]; if (!wB) continue;
-    const wF = total - wB; if (!wF) break;
-    sumB += i * hist[i];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
-    const between = wB * wF * (mB - mF) ** 2;
-    if (between > max) { max = between; thresh = i; }
-  }
-  return thresh;
-}
+// AR.jsのマーカーイベントを監視
+function setupMarkerEvents() {
+  marker0.addEventListener('markerFound', () => {
+    detected = true;
+    lastSeen = Date.now();
+    log('✓ マーカー検出！');
+  });
 
-// ── 連結成分ラベリング（簡易） ──────────────────
-function findBlackRegions(binary, w, h) {
-  const visited = new Uint8Array(w * h);
-  const regions = [];
-  const minPx = w * h * 0.001;
-  const maxPx = w * h * 0.25;
+  marker0.addEventListener('markerLost', () => {
+    detected = false;
+    log('マーカーロスト');
+  });
 
-  for (let y = 1; y < h - 1; y += 3) {
-    for (let x = 1; x < w - 1; x += 3) {
-      const idx = y * w + x;
-      if (binary[idx] !== 0 || visited[idx]) continue;
-
-      const stack = [idx];
-      visited[idx] = 1;
-      let minX=x, maxX=x, minY=y, maxY=y, count=0;
-
-      while (stack.length && count < 30000) {
-        const i = stack.pop(); count++;
-        const cx = i % w, cy = (i / w) | 0;
-        if (cx < minX) minX=cx; if (cx > maxX) maxX=cx;
-        if (cy < minY) minY=cy; if (cy > maxY) maxY=cy;
-
-        for (const ni of [i-1, i+1, i-w, i+w]) {
-          if (ni >= 0 && ni < w*h && !visited[ni] && binary[ni] === 0) {
-            visited[ni] = 1; stack.push(ni);
-          }
-        }
-      }
-
-      if (count < minPx || count > maxPx) continue;
-      const bw = maxX - minX, bh = maxY - minY;
-      if (bw < 20 || bh < 20) continue;
-      const asp = bw / bh;
-      if (asp < 0.4 || asp > 2.5) continue;
-
-      regions.push({ minX, maxX, minY, maxY, bw, bh });
-    }
-  }
-  return regions;
-}
-
-// ── マーカー内のビット読み取り ──────────────────
-function readMarkerBits(gray, w, reg) {
-  const { minX, minY, bw, bh } = reg;
-  const bits = [];
-  // 6x6グリッドの内側4x4を読む（外周1マスは黒枠）
-  for (let r = 0; r < 4; r++) {
-    const row = [];
-    for (let c = 0; c < 4; c++) {
-      // セル中心座標
-      const px = Math.round(minX + (c + 1.5) * bw / 6);
-      const py = Math.round(minY + (r + 1.5) * bh / 6);
-      const gi = py * w + px;
-      row.push(gi >= 0 && gi < gray.length ? (gray[gi] < 128 ? 1 : 0) : 0);
-    }
-    bits.push(row);
-  }
-  return bits;
-}
-
-// 4回転のパターンマッチ
-function matchPattern(bits) {
-  let bestId = -1, bestScore = 10; // 16中10以上で一致
-  for (let id = 0; id < PATTERNS.length; id++) {
-    const pat = PATTERNS[id];
-    // 4回転試す
-    for (let rot = 0; rot < 4; rot++) {
-      let score = 0;
-      const rotBits = rotateBits(bits, rot);
-      for (let r = 0; r < 4; r++)
-        for (let c = 0; c < 4; c++)
-          if (rotBits[r][c] === pat[r][c]) score++;
-      if (score > bestScore) { bestScore = score; bestId = id; }
-    }
-  }
-  return { id: bestId, score: bestScore };
-}
-
-function rotateBits(bits, times) {
-  let b = bits;
-  for (let t = 0; t < times; t++) {
-    const n = [];
-    for (let c = 0; c < 4; c++) {
-      n.push([b[3][c], b[2][c], b[1][c], b[0][c]]);
-    }
-    b = n;
-  }
-  return b;
-}
-
-// ── コテ角度計算 ────────────────────────────────
-function calcAngle(reg) {
-  // バウンディングボックスのアスペクト比から傾きを推定
-  // コテを水平に持つ→マーカーも水平→bw > bh
-  // コテを立てる→マーカーが縦長→bh > bw
-  const { bw, bh } = reg;
-  // atan2で角度計算（0°=水平、90°=垂直）
-  const angle = Math.atan2(bh, bw) * 180 / Math.PI;
-  // 左官の「壁面に対するコテの浮き角」として返す
-  return Math.abs(angle);
-}
-
-// ── メインループ ────────────────────────────────
-function detect() {
-  if (!video.videoWidth) { rafId = requestAnimationFrame(detect); return; }
-
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  canvas.width  = vw;
-  canvas.height = vh;
-
-  ctx.drawImage(video, 0, 0, vw, vh);
-  const imgData = ctx.getImageData(0, 0, vw, vh);
-  const gray = toGray(imgData.data, vw, vh);
-  const thresh = otsuThreshold(gray);
-
-  const binary = new Uint8Array(vw * vh);
-  for (let i = 0; i < gray.length; i++) binary[i] = gray[i] < thresh ? 0 : 255;
-
-  const regions = findBlackRegions(binary, vw, vh);
-  log(`候補: ${regions.length}個 | 閾値: ${thresh} | ${vw}x${vh}`);
-
-  ctx.clearRect(0, 0, vw, vh);
-
-  let detected = false;
-
-  for (const reg of regions) {
-    const bits = readMarkerBits(gray, vw, reg);
-    const { id, score } = matchPattern(bits);
-
-    if (id >= 0) {
-      detected = true;
-      const angle = calcAngle(reg);
-      smoothAngle = smoothAngle * 0.75 + angle * 0.25;
-
-      const isGood = smoothAngle >= 15 && smoothAngle <= 35;
-      const isBad  = smoothAngle < 10 || smoothAngle > 55;
-      const color  = isGood ? '#00ff88' : isBad ? '#ff3b3b' : '#ffe033';
-
-      // マーカー枠描画
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
-      ctx.shadowBlur = 14;
-      ctx.shadowColor = color;
-      ctx.strokeRect(reg.minX, reg.minY, reg.bw, reg.bh);
-      ctx.shadowBlur = 0;
-
-      // ラベル
-      ctx.fillStyle = color;
-      ctx.font = `bold ${Math.max(14, vw/50)}px monospace`;
-      ctx.fillText(`ID:${id}  ${Math.round(smoothAngle)}°`, reg.minX + 4, reg.minY - 6);
-
-      // 4x4グリッド可視化（デバッグ用）
-      for (let r = 0; r < 4; r++) {
-        for (let c = 0; c < 4; c++) {
-          const px = reg.minX + (c + 1.5) * reg.bw / 6;
-          const py = reg.minY + (r + 1.5) * reg.bh / 6;
-          ctx.fillStyle = bits[r][c] ? 'rgba(255,0,0,0.5)' : 'rgba(0,255,136,0.5)';
-          ctx.beginPath();
-          ctx.arc(px, py, 3, 0, Math.PI*2);
-          ctx.fill();
-        }
-      }
-
+  // 毎フレーム角度を取得
+  function tick() {
+    if (detected) {
+      const obj = marker0.object3D;
+      const rotation = obj.rotation;
+      const angle = calcTrowelAngle(rotation);
+      smoothAngle = smoothAngle * 0.7 + angle * 0.3;
       updateUI(smoothAngle, true);
-      log(`✓ ID:${id} 検出! 角度:${Math.round(smoothAngle)}° スコア:${score}/16`);
-      noDetectFrames = 0;
-      break;
+      log(`✓ 検出中 | rx:${Math.round(THREE.MathUtils.radToDeg(rotation.x))}° ry:${Math.round(THREE.MathUtils.radToDeg(rotation.y))}° → コテ角:${Math.round(smoothAngle)}°`);
+    } else {
+      // 2秒後に非表示
+      if (Date.now() - lastSeen > 2000) {
+        updateUI(smoothAngle, false);
+      }
     }
+    requestAnimationFrame(tick);
   }
-
-  if (!detected) {
-    noDetectFrames++;
-    if (noDetectFrames > 20) updateUI(smoothAngle, false);
-    log(`検出なし | 候補${regions.length}個 | フレーム${noDetectFrames}`);
-  }
-
-  rafId = requestAnimationFrame(detect);
+  tick();
 }
 
-// ── カメラ起動 ──────────────────────────────────
-document.getElementById('startBtn').addEventListener('click', async () => {
+// 起動ボタン
+document.getElementById('startBtn').addEventListener('click', () => {
   document.getElementById('start').classList.add('hide');
-  log('カメラ起動中...');
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
-    });
-    video.srcObject = stream;
-    await video.play();
-    log(`カメラOK: ${video.videoWidth}x${video.videoHeight}`);
-  } catch(e) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream; await video.play();
-      log('カメラOK(フォールバック)');
-    } catch(e2) { log('カメラエラー: ' + e2.message); }
-  }
-  if (rafId) cancelAnimationFrame(rafId);
-  detect();
+  arScene.style.display = 'block';
+  log('AR.js起動中...');
+
+  // A-Frameのロードを待ってからイベント設定
+  arScene.addEventListener('loaded', () => {
+    log('AR.js準備完了 — マーカーを探しています');
+    setupMarkerEvents();
+  });
+
+  // タイムアウト保険（loadedが発火しない場合）
+  setTimeout(() => {
+    if (dbgEl.textContent === 'AR.js起動中...') {
+      log('AR.js起動完了（タイムアウト経由）');
+      setupMarkerEvents();
+    }
+  }, 3000);
 });
 
-log('準備完了');
+log('準備完了 — 起動ボタンを押してください');
 </script>
 </body>
 </html>
