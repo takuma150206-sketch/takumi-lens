@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>匠の眼 — 壁ディスプレイ</title>
+  <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+    :root {
+      --green:  #00ff88;
+      --red:    #ff3b3b;
+      --yellow: #ffe033;
+      --panel:  rgba(8,12,18,0.88);
+      --border: rgba(0,255,136,0.22);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+
+    /* カメラ映像 */
+    #video {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover; z-index: 0;
+    }
+    /* AR描画キャンバス */
+    #canvas {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      z-index: 1; pointer-events: none;
+    }
+
+    /* HUD */
+    #hud {
+      position: fixed; inset: 0; z-index: 2;
+      pointer-events: none;
+      display: flex; flex-direction: column;
+      justify-content: space-between; padding: 16px;
+    }
+    #topBar {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 8px 14px;
+      backdrop-filter: blur(10px); width: fit-content;
+    }
+    .logo { font-weight: 900; font-size: .95rem; color: var(--green); }
+    .ver  { font-family: 'Share Tech Mono', monospace; font-size: .65rem; color: #3a5060; }
+    #dot  { width: 8px; height: 8px; border-radius: 50%; background: #2a3a44; margin-left: 6px; transition: background .3s, box-shadow .3s; }
+    #dot.ok   { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    #dot.warn { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+    #dot.lost { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+
+    /* 中央角度表示 */
+    #anglWrap {
+      position: fixed; top: 40%; left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 3; text-align: center;
+      pointer-events: none;
+    }
+    #anglNum {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: clamp(5rem, 18vw, 9rem);
+      line-height: 1; color: var(--green);
+      text-shadow: 0 0 40px rgba(0,255,136,.5);
+      transition: color .15s, text-shadow .15s;
+    }
+    #anglNum.warn { color: var(--yellow); text-shadow: 0 0 40px rgba(255,224,51,.5); }
+    #anglNum.bad  { color: var(--red);    text-shadow: 0 0 40px rgba(255,59,59,.5); }
+    #anglSub { font-size: .8rem; letter-spacing: .18em; color: #5a7888; margin-top: 6px; font-family: 'Share Tech Mono', monospace; }
+
+    /* ゲージ */
+    #gaugeWrap {
+      position: fixed; bottom: 105px; left: 50%;
+      transform: translateX(-50%);
+      width: min(460px, 86vw); z-index: 3; pointer-events: none;
+    }
+    #track { height: 5px; background: rgba(255,255,255,.1); border-radius: 99px; position: relative; }
+    #ideal { position: absolute; left: calc(15/90*100%); width: calc(20/90*100%); height: 100%; background: rgba(0,255,136,.3); border-radius: 99px; }
+    #thumb { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); transform: translate(-50%,-50%); transition: left .1s linear, background .15s; }
+    #thumb.warn { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+    #thumb.bad  { background: var(--red);    box-shadow: 0 0 8px var(--red); }
+    #gLabels { display: flex; justify-content: space-between; margin-top: 5px; font-family: 'Share Tech Mono', monospace; font-size: .6rem; color: #2a4050; }
+    #gIdeal  { text-align: center; font-size: .65rem; color: rgba(0,255,136,.55); margin-top: 3px; }
+
+    /* 下部カード */
+    #btmBar { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 9px 16px; backdrop-filter: blur(10px); text-align: center; min-width: 120px; }
+    .clabel { font-size: .58rem; letter-spacing: .18em; color: #3a5060; margin-bottom: 3px; }
+    .cval   { font-family: 'Share Tech Mono', monospace; font-size: 1rem; color: #b8ccd8; }
+    #fbVal  { font-size: .8rem; font-family: 'Noto Sans JP', sans-serif; }
+
+    /* 壁認識状態 */
+    #wallStatus {
+      position: fixed; top: 70px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 3; pointer-events: none;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .68rem; color: #2a4050; letter-spacing: .1em;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 8px; padding: 6px 14px;
+      backdrop-filter: blur(10px);
+    }
+
+    /* センサー接続状態 */
+    #sensorStatus {
+      position: fixed; top: 110px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 3; pointer-events: none;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .68rem; color: #2a4050; letter-spacing: .1em;
+      background: var(--panel); border: 1px solid rgba(255,224,51,.2);
+      border-radius: 8px; padding: 6px 14px;
+      backdrop-filter: blur(10px);
+      transition: border-color .3s, color .3s;
+    }
+    #sensorStatus.connected { border-color: rgba(0,255,136,.3); color: var(--green); }
+
+    #dbg { position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999; background: rgba(0,0,0,.8); font-family: 'Share Tech Mono', monospace; font-size: .58rem; color: #3a8060; padding: 4px 8px; pointer-events: none; white-space: nowrap; overflow: hidden; }
+
+    /* スタート画面 */
+    #start {
+      position: fixed; inset: 0; z-index: 10000;
+      background: #0a0c0f;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 24px; padding: 28px;
+      transition: opacity .5s;
+    }
+    #start.hide { opacity: 0; pointer-events: none; }
+    .sLogo { font-weight: 900; font-size: clamp(2rem, 8vw, 4rem); color: var(--green); letter-spacing: .08em; font-family: 'Noto Sans JP', sans-serif; }
+    .sSub  { font-size: .75rem; color: #3a5060; letter-spacing: .2em; font-family: 'Share Tech Mono', monospace; }
+    .sBox  { background: rgba(0,255,136,.04); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; width: 100%; max-width: 420px; color: #d0dde8; font-family: 'Noto Sans JP', sans-serif; }
+    .sBox h3 { font-size: .6rem; letter-spacing: .22em; color: #3a5060; margin-bottom: 12px; }
+    .sRow { display: flex; gap: 12px; margin-bottom: 10px; font-size: .82rem; line-height: 1.6; }
+    .sN   { font-family: 'Share Tech Mono', monospace; color: var(--green); font-size: .7rem; padding-top: 2px; flex-shrink: 0; }
+    #startBtn { background: var(--green); color: #040804; border: none; border-radius: 10px; padding: 15px 44px; font-family: 'Noto Sans JP', sans-serif; font-weight: 700; font-size: 1rem; cursor: pointer; pointer-events: auto; box-shadow: 0 0 28px rgba(0,255,136,.3); transition: transform .12s; }
+    #startBtn:active { transform: scale(.96); }
+  </style>
+</head>
+<body>
+
+<video id="video" autoplay muted playsinline></video>
+<canvas id="canvas"></canvas>
+
+<div id="hud">
+  <div id="topBar">
+    <span class="logo">匠の眼</span>
+    <span class="ver">v0.5 WALL</span>
+    <div id="dot"></div>
+  </div>
+  <div id="btmBar">
+    <div class="card"><div class="clabel">コテ角度</div><div class="cval" id="angCard">--°</div></div>
+    <div class="card"><div class="clabel">理想範囲</div><div class="cval">15°– 35°</div></div>
+    <div class="card"><div class="clabel">フィードバック</div><div class="cval" id="fbVal">待機中</div></div>
+  </div>
+</div>
+
+<div id="wallStatus">壁QRを探しています…</div>
+<div id="sensorStatus">📱 スマホ接続待ち</div>
+
+<div id="anglWrap">
+  <div id="anglNum">--</div>
+  <div id="anglSub">TROWEL ANGLE</div>
+</div>
+
+<div id="gaugeWrap">
+  <div id="track"><div id="ideal"></div><div id="thumb"></div></div>
+  <div id="gLabels"><span>0°</span><span>15°</span><span>35°</span><span>60°</span><span>90°</span></div>
+  <div id="gIdeal">▲ 理想範囲 15°〜35°</div>
+</div>
+
+<div id="dbg">初期化中...</div>
+
+<div id="start">
+  <div class="sLogo">匠の眼</div>
+  <div class="sSub">WALL DISPLAY — Quest 3用</div>
+  <div class="sBox">
+    <h3>システム構成</h3>
+    <div class="sRow"><span class="sN">📱</span><span><b>スマホ</b>をコテに固定して kote.html を開く→傾きを自動送信</span></div>
+    <div class="sRow"><span class="sN">🥽</span><span><b>Quest 3</b>でこの画面を開く→壁のQRを認識→角度をオーバーレイ表示</span></div>
+    <div class="sRow"><span class="sN">📄</span><span>壁の左上に<b>専用QRコード</b>（TAKUMI-WALL）を貼っておく</span></div>
+  </div>
+  <button id="startBtn">Quest 3カメラ起動</button>
+</div>
+
+<script>
+const video       = document.getElementById('video');
+const canvas      = document.getElementById('canvas');
+const ctx         = canvas.getContext('2d');
+const dot         = document.getElementById('dot');
+const anglNum     = document.getElementById('anglNum');
+const thumb       = document.getElementById('thumb');
+const angCard     = document.getElementById('angCard');
+const fbVal       = document.getElementById('fbVal');
+const wallStatus  = document.getElementById('wallStatus');
+const sensorStatus= document.getElementById('sensorStatus');
+const dbgEl       = document.getElementById('dbg');
+
+let smoothAngle   = 25;
+let currentAngle  = 25;
+let wallDetected  = false;
+let wallPoints    = null;
+let sensorConnected = false;
+let lastSensorTime  = 0;
+
+function log(m) { dbgEl.textContent = m; }
+
+// ── スマホからBroadcastChannelで角度を受信 ──────
+const bc = new BroadcastChannel('takumi-angle');
+bc.onmessage = (e) => {
+  currentAngle = e.data.angle;
+  lastSensorTime = Date.now();
+  if (!sensorConnected) {
+    sensorConnected = true;
+    sensorStatus.textContent = '📱 スマホ接続済み ✓';
+    sensorStatus.classList.add('connected');
+  }
+};
+
+// センサー接続タイムアウト監視
+setInterval(() => {
+  if (sensorConnected && Date.now() - lastSensorTime > 3000) {
+    sensorConnected = false;
+    sensorStatus.textContent = '📱 スマホ接続待ち…';
+    sensorStatus.classList.remove('connected');
+  }
+}, 1000);
+
+// ── UI更新 ──────────────────────────────────────
+function updateAngleUI(angle) {
+  smoothAngle = smoothAngle * 0.6 + angle * 0.4;
+  const a = Math.round(smoothAngle);
+  const good = a >= 15 && a <= 35;
+  const bad  = a < 10  || a > 55;
+  const cls  = good ? '' : bad ? 'bad' : 'warn';
+
+  anglNum.textContent = a;
+  anglNum.className   = cls;
+  angCard.textContent = a + '°';
+  thumb.className     = cls;
+  thumb.style.left    = Math.min(Math.max(a/90*100,0),100) + '%';
+  dot.className       = good ? 'ok' : bad ? 'lost' : 'warn';
+
+  let fb = '良好です ✓';
+  if      (a < 10) fb = '寝すぎています';
+  else if (a < 15) fb = 'もう少し立てて';
+  else if (a > 55) fb = '立てすぎています';
+  else if (a > 35) fb = '少し寝かせて';
+  fbVal.textContent = fb;
+}
+
+// ── 壁QR検出ループ ──────────────────────────────
+function startWallDetection() {
+  const codeReader = new ZXing.BrowserQRCodeReader();
+
+  codeReader.listVideoInputDevices().then(devices => {
+    const backCam = devices.find(d =>
+      d.label.toLowerCase().includes('back') ||
+      d.label.toLowerCase().includes('rear') ||
+      d.label.toLowerCase().includes('environment')
+    ) || devices[devices.length - 1];
+
+    log(`カメラ起動: ${backCam ? backCam.label : '自動'}`);
+
+    codeReader.decodeFromVideoDevice(backCam?.deviceId, video, (result, err) => {
+      canvas.width  = video.videoWidth  || window.innerWidth;
+      canvas.height = video.videoHeight || window.innerHeight;
+
+      if (result) {
+        const text   = result.getText();
+        const points = result.getResultPoints();
+
+        if (text.includes('TAKUMI-WALL')) {
+          wallDetected = true;
+          wallPoints   = points;
+          wallStatus.textContent = '壁QR認識済み ✓';
+
+          // 壁の認識範囲をキャンバスに描画
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          if (points && points.length >= 2) {
+            // 壁QRの周囲に作業エリア枠を描画
+            const a = Math.round(smoothAngle);
+            const good = a >= 15 && a <= 35;
+            const bad  = a < 10  || a > 55;
+            const color = good ? '#00ff88' : bad ? '#ff3b3b' : '#ffe033';
+
+            // QR枠
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = color;
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+            ctx.closePath();
+            ctx.stroke();
+
+            // 作業エリア（QRの右側に広げた範囲）
+            const qrSize = Math.abs(points[1].x - points[0].x);
+            const areaX  = points[1].x + 10;
+            const areaY  = points[0].y - qrSize * 0.5;
+            const areaW  = qrSize * 4;
+            const areaH  = qrSize * 3;
+
+            ctx.strokeStyle = color.replace(')', ', 0.3)').replace('rgb', 'rgba').replace('#00ff88', 'rgba(0,255,136,0.25)').replace('#ff3b3b','rgba(255,59,59,0.25)').replace('#ffe033','rgba(255,224,51,0.25)');
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 6]);
+            ctx.shadowBlur = 0;
+            ctx.strokeRect(areaX, areaY, areaW, areaH);
+            ctx.setLineDash([]);
+
+            // 「作業エリア」ラベル
+            ctx.fillStyle = color;
+            ctx.font = `${Math.max(14, canvas.width/45)}px monospace`;
+            ctx.fillText('作業エリア', areaX + 8, areaY - 6);
+
+            // 角度を壁の上に大きく表示
+            const centerX = areaX + areaW / 2;
+            const centerY = areaY + areaH / 2;
+            ctx.font = `bold ${Math.max(36, canvas.width/12)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.fillStyle = color;
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = color;
+            ctx.fillText(a + '°', centerX, centerY);
+            ctx.shadowBlur = 0;
+            ctx.textAlign = 'left';
+          }
+
+          // センサーからの角度を反映
+          updateAngleUI(currentAngle);
+          log(`✓ 壁QR検出 | コテ角:${Math.round(smoothAngle)}° | センサー:${sensorConnected ? '接続' : '未接続'}`);
+
+        } else {
+          log(`別のQR検出: ${text}`);
+        }
+      } else {
+        // QR未検出時はキャンバスをクリア
+        if (wallDetected) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          wallDetected = false;
+          wallStatus.textContent = '壁QRを探しています…';
+        }
+        // センサーが接続されていれば角度は更新し続ける
+        if (sensorConnected) updateAngleUI(currentAngle);
+      }
+    });
+  }).catch(e => log('カメラエラー: ' + e.message));
+}
+
+// ── 起動ボタン ──────────────────────────────────
+document.getElementById('startBtn').addEventListener('click', () => {
+  document.getElementById('start').classList.add('hide');
+  log('カメラ起動中...');
+
+  if (typeof ZXing === 'undefined') {
+    const check = setInterval(() => {
+      if (typeof ZXing !== 'undefined') {
+        clearInterval(check);
+        startWallDetection();
+      }
+    }, 200);
+  } else {
+    startWallDetection();
+  }
+});
+
+log('準備完了');
+</script>
+</body>
+</html>

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>匠の眼 — コテセンサー</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+    :root {
+      --green:  #00ff88;
+      --red:    #ff3b3b;
+      --yellow: #ffe033;
+      --dark:   #0a0c0f;
+      --panel:  rgba(8,12,18,0.95);
+      --border: rgba(0,255,136,0.22);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: var(--dark); color: #d0dde8;
+      font-family: 'Noto Sans JP', sans-serif;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 24px; padding: 24px;
+    }
+
+    .logo { font-weight: 900; font-size: 1.4rem; color: var(--green); letter-spacing: .08em; }
+    .role { font-family: 'Share Tech Mono', monospace; font-size: .7rem; color: #3a5060; letter-spacing: .2em; }
+
+    /* 大きな角度表示 */
+    #angleBig {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: clamp(5rem, 25vw, 8rem);
+      line-height: 1; color: var(--green);
+      text-shadow: 0 0 40px rgba(0,255,136,.4);
+      text-align: center;
+      transition: color .15s, text-shadow .15s;
+    }
+    #angleBig.warn { color: var(--yellow); text-shadow: 0 0 40px rgba(255,224,51,.4); }
+    #angleBig.bad  { color: var(--red);    text-shadow: 0 0 40px rgba(255,59,59,.4); }
+    #angleLabel { font-family: 'Share Tech Mono', monospace; font-size: .75rem; color: #3a5060; text-align: center; letter-spacing: .2em; margin-top: 4px; }
+
+    /* ゲージ */
+    #gaugeWrap { width: min(320px, 85vw); }
+    #track { height: 6px; background: rgba(255,255,255,.08); border-radius: 99px; position: relative; }
+    #ideal { position: absolute; left: calc(15/90*100%); width: calc(20/90*100%); height: 100%; background: rgba(0,255,136,.3); border-radius: 99px; }
+    #thumb { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); transform: translate(-50%,-50%); transition: left .08s linear, background .15s; }
+    #thumb.warn { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+    #thumb.bad  { background: var(--red);    box-shadow: 0 0 8px var(--red); }
+    #gLabels { display: flex; justify-content: space-between; margin-top: 5px; font-family: 'Share Tech Mono', monospace; font-size: .6rem; color: #2a4050; }
+
+    /* フィードバック */
+    #feedback {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 24px;
+      font-size: .9rem; text-align: center; min-width: 200px;
+      transition: border-color .2s;
+    }
+    #feedback.good { border-color: rgba(0,255,136,.5); color: var(--green); }
+    #feedback.warn { border-color: rgba(255,224,51,.4); color: var(--yellow); }
+    #feedback.bad  { border-color: rgba(255,59,59,.4);  color: var(--red); }
+
+    /* 接続情報 */
+    #connBox {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 20px; width: 100%; max-width: 360px;
+      text-align: center;
+    }
+    #connBox .clabel { font-size: .6rem; letter-spacing: .18em; color: #3a5060; margin-bottom: 6px; }
+    #connUrl { font-family: 'Share Tech Mono', monospace; font-size: .72rem; color: var(--green); word-break: break-all; }
+    #connStatus { font-size: .7rem; color: #3a5060; margin-top: 6px; }
+
+    /* センサー許可ボタン */
+    #permitBtn {
+      background: var(--green); color: #040804;
+      border: none; border-radius: 10px; padding: 14px 36px;
+      font-family: 'Noto Sans JP', sans-serif; font-weight: 700;
+      font-size: 1rem; cursor: pointer;
+      box-shadow: 0 0 24px rgba(0,255,136,.3);
+    }
+    #permitBtn:active { opacity: .8; }
+    #permitBtn.hide { display: none; }
+
+    #dbg { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,.8); font-family: 'Share Tech Mono', monospace; font-size: .55rem; color: #3a7050; padding: 3px 8px; white-space: nowrap; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div class="logo">匠の眼</div>
+  <div class="role">KOTE SENSOR — スマホをコテに固定</div>
+
+  <div id="angleBig">--°</div>
+  <div id="angleLabel">TROWEL ANGLE</div>
+
+  <div id="gaugeWrap">
+    <div id="track"><div id="ideal"></div><div id="thumb"></div></div>
+    <div id="gLabels"><span>0°</span><span>15°</span><span>35°</span><span>60°</span><span>90°</span></div>
+  </div>
+
+  <div id="feedback">センサー起動待ち</div>
+
+  <button id="permitBtn">センサーを起動する</button>
+
+  <div id="connBox">
+    <div class="clabel">Quest 3用URL（同じWi-Fi内でアクセス）</div>
+    <div id="connUrl">--</div>
+    <div id="connStatus">待機中</div>
+  </div>
+
+  <div id="dbg">初期化中...</div>
+
+<script>
+const angleBig  = document.getElementById('angleBig');
+const thumb     = document.getElementById('thumb');
+const feedback  = document.getElementById('feedback');
+const permitBtn = document.getElementById('permitBtn');
+const connUrl   = document.getElementById('connUrl');
+const connStatus= document.getElementById('connStatus');
+const dbgEl     = document.getElementById('dbg');
+
+let smoothAngle = 25;
+let wsServer = null;
+let clients = [];
+
+function log(m) { dbgEl.textContent = m; }
+
+// ── 角度UI更新 ──────────────────────────────────
+function updateUI(angle) {
+  const a = Math.round(angle);
+  const good = a >= 15 && a <= 35;
+  const bad  = a < 10  || a > 55;
+  const cls  = good ? '' : bad ? 'bad' : 'warn';
+
+  angleBig.textContent = a + '°';
+  angleBig.className   = cls;
+  thumb.className      = cls;
+  thumb.style.left     = Math.min(Math.max(a/90*100,0),100) + '%';
+
+  let fb = '良好です ✓';
+  let fc = 'good';
+  if      (a < 10) { fb = '寝すぎています'; fc = 'bad'; }
+  else if (a < 15) { fb = 'もう少し立てて'; fc = 'warn'; }
+  else if (a > 55) { fb = '立てすぎています'; fc = 'bad'; }
+  else if (a > 35) { fb = '少し寝かせて'; fc = 'warn'; }
+  feedback.textContent = fb;
+  feedback.className = fc;
+}
+
+// ── デバイスの向きから角度を計算 ─────────────────
+// スマホをコテの背面に横向きに固定した場合
+// beta = 前後の傾き（-180〜180）
+// gamma = 左右の傾き（-90〜90）
+function calcAngle(beta, gamma) {
+  // コテを壁に当てて横持ちする場合、gammaが主な指標
+  // 水平=0°、垂直=90°
+  const angle = Math.abs(gamma);
+  return Math.min(angle, 90);
+}
+
+// ── センサーデータをBroadcastChannel + URLで共有 ─
+// BroadcastChannel: 同一ブラウザのタブ間で通信
+// URLパラメータ方式: wall.htmlがポーリングして取得
+let currentAngle = 25;
+const bc = new BroadcastChannel('takumi-angle');
+
+function broadcastAngle(angle) {
+  currentAngle = angle;
+  // BroadcastChannelで送信（同一ブラウザのwall.htmlへ）
+  bc.postMessage({ angle: angle, ts: Date.now() });
+}
+
+// ── センサー起動 ────────────────────────────────
+function startSensor() {
+  if (typeof DeviceOrientationEvent === 'undefined') {
+    log('このデバイスはセンサー非対応');
+    return;
+  }
+
+  window.addEventListener('deviceorientation', (e) => {
+    const beta  = e.beta  || 0; // 前後
+    const gamma = e.gamma || 0; // 左右
+    const alpha = e.alpha || 0; // 回転
+
+    const raw = calcAngle(beta, gamma);
+    smoothAngle = smoothAngle * 0.7 + raw * 0.3;
+
+    updateUI(smoothAngle);
+    broadcastAngle(Math.round(smoothAngle));
+    log(`β:${Math.round(beta)}° γ:${Math.round(gamma)}° → コテ角:${Math.round(smoothAngle)}°`);
+  }, true);
+
+  log('センサー起動完了！');
+  permitBtn.classList.add('hide');
+}
+
+// iOS 13+はユーザー操作が必要
+permitBtn.addEventListener('click', () => {
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission()
+      .then(state => {
+        if (state === 'granted') startSensor();
+        else log('センサーの許可が拒否されました');
+      }).catch(e => log('許可エラー: ' + e));
+  } else {
+    // Android・その他は許可不要
+    startSensor();
+  }
+});
+
+// ── wall.html用のURL表示 ──────────────────────────
+// 同じGitHub PagesのURLでwall.htmlを開くよう案内
+const base = location.href.replace('index.html','').replace(/\/[^\/]*$/, '/');
+const wallUrl = base + 'wall.html';
+connUrl.textContent = wallUrl;
+connStatus.textContent = 'Quest 3のMeta Browserで上のURLを開いてください';
+
+log('準備完了 — センサーを起動してください');
+</script>
+</body>
+</html>
